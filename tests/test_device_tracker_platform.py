@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 from tests.module_loader import load_cudy_module
 
 
 device_tracking = load_cudy_module("device_tracking")
+device_tracker = load_cudy_module("device_tracker")
 DEVICE_TRACKER_PATH = Path(__file__).resolve().parents[1] / "custom_components" / "cudy_router" / "device_tracker.py"
 
 
@@ -373,3 +376,40 @@ def test_device_tracker_platform_preserves_mac_based_unique_ids() -> None:
     source = DEVICE_TRACKER_PATH.read_text(encoding="utf-8")
 
     assert "_attr_unique_id = self._mac or self._normalized_mac" in source
+
+
+def _build_tracker_entity(device: dict[str, Any]) -> "device_tracker.CudyRouterDeviceTracker":
+    const = load_cudy_module("const")
+    coordinator = SimpleNamespace(
+        data={const.MODULE_DEVICES: {const.SECTION_DEVICE_LIST: [device]}},
+    )
+    config_entry = SimpleNamespace(entry_id="entry123")
+    return device_tracker.CudyRouterDeviceTracker(
+        coordinator,
+        config_entry,
+        device,
+        normalized_mac=device_tracking.normalize_mac(device.get("mac")),
+    )
+
+
+def test_device_tracker_excludes_high_churn_attributes_from_recorder_history() -> None:
+    """Noisy per-poll attributes should be opted out of recorder history."""
+    assert device_tracker.CudyRouterDeviceTracker._unrecorded_attributes == frozenset(
+        {"up_speed", "down_speed", "signal", "online_time"}
+    )
+
+
+def test_device_tracker_still_exposes_unrecorded_attributes_live() -> None:
+    """Attributes excluded from history should still be visible on the live entity."""
+    device = _device("Office PC", "192.168.10.30", "AA:BB:CC:DD:EE:30")
+    device.update(
+        {
+            "up_speed": "1.2 Mbps",
+            "down_speed": "3.4 Mbps",
+            "signal": "-55 dBm",
+            "online_time": "2h 15m",
+        }
+    )
+    entity = _build_tracker_entity(device)
+
+    assert entity.extra_state_attributes == device

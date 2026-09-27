@@ -147,6 +147,42 @@ def _ensure_homeassistant_stub() -> None:
         button_module.ButtonEntity = ButtonEntity
         sys.modules["homeassistant.components.button"] = button_module
 
+    device_tracker_module = sys.modules.get("homeassistant.components.device_tracker")
+    if device_tracker_module is None:
+        device_tracker_module = types.ModuleType("homeassistant.components.device_tracker")
+
+        class SourceType:
+            ROUTER = "router"
+            GPS = "gps"
+            BLUETOOTH = "bluetooth"
+            BLUETOOTH_LE = "bluetooth_le"
+
+        device_tracker_module.SourceType = SourceType
+        sys.modules["homeassistant.components.device_tracker"] = device_tracker_module
+
+    device_tracker_config_entry_module = sys.modules.get(
+        "homeassistant.components.device_tracker.config_entry"
+    )
+    if device_tracker_config_entry_module is None:
+        device_tracker_config_entry_module = types.ModuleType(
+            "homeassistant.components.device_tracker.config_entry"
+        )
+
+        class ScannerEntity:
+            @property
+            def unique_id(self):
+                return getattr(self, "_attr_unique_id", None)
+
+            @property
+            def extra_state_attributes(self):
+                return {}
+
+        device_tracker_config_entry_module.ScannerEntity = ScannerEntity
+        sys.modules[
+            "homeassistant.components.device_tracker.config_entry"
+        ] = device_tracker_config_entry_module
+        device_tracker_module.config_entry = device_tracker_config_entry_module
+
     config_entries_module = sys.modules.get("homeassistant.config_entries")
     if config_entries_module is None:
         config_entries_module = types.ModuleType("homeassistant.config_entries")
