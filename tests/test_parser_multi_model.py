@@ -555,6 +555,45 @@ def test_parse_modem_info_reads_lt500d_cellular_icon_strength() -> None:
     assert parsed["rssi"]["value"] == 27
 
 
+def test_parse_modem_info_prefers_5g_nsa_text_over_lte_anchor_icon() -> None:
+    """P5 on 5G-NSA shows an icon-4g3 LTE anchor next to the "5G-NSA" label (issue #30)."""
+    parsed = parser.parse_modem_info(
+        """
+        <table>
+          <tbody>
+            <tr>
+              <td>Network Type</td>
+              <td>
+                EE&nbsp;5G-NSA&nbsp;
+                <span class="fa-lg"><i class="icon icon-sim1 text-success"></i></span>
+                <span class="fa-lg"><i class="icon icon-4g3 text-success"></i></span>
+              </td>
+            </tr>
+            <tr><td>RSSI</td><td>27</td></tr>
+          </tbody>
+        </table>
+        """
+    )
+
+    assert parsed["network"]["value"] == "5G"
+    assert parsed["network"]["attributes"]["raw_network_type"] == "EE 5G-NSA"
+    assert parsed["signal"]["value"] == 3
+
+
+def test_parse_modem_info_keeps_4g_when_the_label_says_4g() -> None:
+    """A 4G-only connection keeps reporting 4G with the spacing the router really sends."""
+    parsed = parser.parse_modem_info(
+        """
+        <table><tbody>
+          <tr><td>Network Type</td><td>freenet&nbsp;&nbsp;4G <i class="icon icon-4g2"></i></td></tr>
+        </tbody></table>
+        """
+    )
+
+    assert parsed["network"]["value"] == "4G"
+    assert parsed["network"]["attributes"]["raw_network_type"] == "freenet 4G"
+
+
 def test_modem_network_sensor_is_labelled_as_network_type() -> None:
     """The cellular network entity should not be confused with signal strength."""
     assert sensor_descriptions.NETWORK_SENSOR.name_suffix == "Network type"
