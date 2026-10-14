@@ -256,12 +256,15 @@ async def async_setup_entry(
                 device_list=config_entry.options.get(OPTIONS_DEVICELIST),
                 known_clients=known_clients,
             )
-        async_cleanup_stale_client_entities(
-            hass,
-            config_entry,
-            "switch",
-            allowed_client_macs,
-        )
+        # An empty list under automatic adding means the device page failed to load; keep the
+        # existing client switches rather than deleting them all.
+        if allowed_client_macs or not auto_add_connected_devices:
+            async_cleanup_stale_client_entities(
+                hass,
+                config_entry,
+                "switch",
+                allowed_client_macs,
+            )
 
         for normalized_mac in sorted(allowed_client_macs):
             device = build_client_seed_device(

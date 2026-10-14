@@ -240,18 +240,22 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
             known_clients=known_client_devices(hass, entry),
         )
 
-    async_cleanup_stale_client_entities(
-        hass,
-        entry,
-        Platform.SENSOR.value,
-        allowed_client_macs,
-    )
-    async_cleanup_stale_client_entities(
-        hass,
-        entry,
-        Platform.SWITCH.value,
-        allowed_client_macs,
-    )
+    # An empty client list under automatic adding means the device page failed to load
+    # (a router always lists at least HA's own connection), so do not treat every
+    # client as gone and delete their entities; the next reload will recreate nothing.
+    if allowed_client_macs or not entry.options.get(OPTIONS_AUTO_ADD_CONNECTED_DEVICES, True):
+        async_cleanup_stale_client_entities(
+            hass,
+            entry,
+            Platform.SENSOR.value,
+            allowed_client_macs,
+        )
+        async_cleanup_stale_client_entities(
+            hass,
+            entry,
+            Platform.SWITCH.value,
+            allowed_client_macs,
+        )
 
     known_trackers = known_tracker_clients(hass, entry)
     tracker_options_configured = (

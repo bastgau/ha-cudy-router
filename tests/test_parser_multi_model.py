@@ -594,6 +594,22 @@ def test_parse_modem_info_keeps_4g_when_the_label_says_4g() -> None:
     assert parsed["network"]["attributes"]["raw_network_type"] == "freenet 4G"
 
 
+def test_parse_modem_info_reads_3g_from_the_label_not_the_4g_icon() -> None:
+    """LT500D on 3G keeps the mobile-network icon (icon-4g4); the label names the real generation (issue #26)."""
+    parsed = parser.parse_modem_info(
+        """
+        <table><tbody>
+          <tr><td>Network Type</td><td>DIGI ES&nbsp;3G&nbsp;
+            <span class="fa-lg"><i class="icon icon-sim1 text-success"></i></span>
+            <span class="fa-lg"><i class="icon icon-4g4 text-success"></i></span></td></tr>
+        </tbody></table>
+        """
+    )
+
+    assert parsed["network"]["value"] == "3G"
+    assert parsed["signal"]["value"] == 4
+
+
 def test_modem_network_sensor_is_labelled_as_network_type() -> None:
     """The cellular network entity should not be confused with signal strength."""
     assert sensor_descriptions.NETWORK_SENSOR.name_suffix == "Network type"

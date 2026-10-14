@@ -142,3 +142,25 @@ def test_clients_connecting_later_are_not_added_when_automatic_adding_is_off(mon
     _refresh(listeners)
 
     assert all(_client_unique_ids(batch, TV_BOX_ID) == [] for batch in batches)
+
+
+def test_empty_client_list_does_not_remove_existing_client_entities(monkeypatch) -> None:
+    """A failed device-page load (issue #33) must not delete every client's sensors."""
+    coordinator, _listeners, _batches = _set_up(monkeypatch, [])
+    cleanups = []
+    monkeypatch.setattr(sensor, "async_cleanup_stale_client_entities", lambda *args: cleanups.append(args))
+    config_entry = SimpleNamespace(
+        entry_id=ENTRY_ID,
+        data={"model": "WR3000"},
+        options={},
+        title="WR3000",
+        async_on_unload=lambda unload: None,
+    )
+    hass = SimpleNamespace(data={const.DOMAIN: {ENTRY_ID: coordinator}})
+
+    asyncio.run(sensor.async_setup_entry(hass, config_entry, lambda entities: None))
+    assert cleanups == []
+
+    _connect(coordinator, LAPTOP)
+    asyncio.run(sensor.async_setup_entry(hass, config_entry, lambda entities: None))
+    assert len(cleanups) == 1

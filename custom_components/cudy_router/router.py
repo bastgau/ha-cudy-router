@@ -1655,7 +1655,12 @@ class CudyRouter:
                     )
 
             if verified_value == desired_value:
-                return resp.status_code, resp.text[:220]
+                # The router stages the change until its Apply step runs (it shows as an
+                # "Apply" prompt in the web UI); without it the routing/filtering is unchanged.
+                apply_ok, apply_message = self._run_apply_workflow(resp.text, headers=headers)
+                if not apply_ok:
+                    return 0, apply_message[:220]
+                return resp.status_code, apply_message[:220]
 
             if verified_value is None:
                 last_message = (

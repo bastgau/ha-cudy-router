@@ -437,3 +437,45 @@ def test_extract_session_auth_cookie_accepts_sysauth_http_header() -> None:
     assert router._extract_session_auth_cookie(response) is True
     assert router.auth_cookie_name == "sysauth_http"
     assert router.auth_cookie == "http-cookie"
+
+
+def test_authenticate_logs_in_to_a_wr3600h_challenge_login_page(monkeypatch) -> None:
+    """The WR3600H 2.5.30 login page (issue #32) has no inline salt/token and uses the RSA challenge flow."""
+    from pathlib import Path
+
+    login_html = (Path(__file__).parent / "fixtures" / "auth" / "wr3600h_login.html").read_text()
+    router = router_module.CudyRouter(None, "http://192.168.10.1", "admin", "demo")
+    session = SimpleNamespace(cookies=_requests_cookie_jar())
+    monkeypatch.setattr(router, "_get_session", lambda: session)
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    challenge = {
+        "salt": "aabbccdd",
+        "kdfiter": 1000,
+        "nonce": "deadbeef",
+        "key": base64.b64encode(public_pem).decode(),
+    }
+    submitted: dict[str, list[str]] = {}
+
+    def fake_absolute_request(method: str, url: str, **kwargs):
+        if method == "GET":
+            return _response(login_html, url=url)
+        if url.endswith("/admin/login"):
+            return _response("", url=url, json_data=challenge)
+        if method == "POST" and url.endswith("/cgi-bin/luci/"):
+            submitted.update(parse_qs(kwargs["data"], keep_blank_values=True))
+            session.cookies.set("sysauth", "cookie-value")
+            return _response("ok", url=url)
+        raise AssertionError(f"Unexpected request: {method} {url}")
+
+    monkeypatch.setattr(router, "_absolute_request", fake_absolute_request)
+
+    assert router.authenticate() is True
+    assert submitted["_csrf"] == ["csrf-token"]
+    assert submitted["luci_username"] == ["admin"]
+    assert submitted["luci_password"][0] not in ("", "demo")
+    assert router.auth_cookie == "cookie-value"
