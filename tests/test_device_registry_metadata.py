@@ -587,7 +587,13 @@ def test_async_ensure_client_entity_device_links_legacy_tracker_entries() -> Non
         async_get_or_create=lambda **kwargs: (
             create_calls.append(kwargs) or SimpleNamespace(id="client_tracker")
         ),
-        async_get_device=lambda identifiers: SimpleNamespace(id="router_dev"),
+        devices={
+            "router_dev": SimpleNamespace(
+                id="router_dev",
+                config_entry_id="entry-1",
+                identifiers={("cudy_router", "entry-1")},
+            )
+        },
     )
     registry = SimpleNamespace(
         entities={
@@ -832,10 +838,6 @@ def test_async_link_child_devices_sets_via_device_id_on_clients_and_mesh() -> No
         )
 
     device_registry = _FakeDeviceRegistry(devices={})
-    device_registry.async_get_device = lambda identifiers: next(
-        (d for d in device_registry.devices.values() if identifiers & d.identifiers),
-        None,
-    )
     device_registry.async_update_device = lambda device_id, **changes: [
         setattr(device_registry.devices[device_id], k, v) for k, v in changes.items()
     ]

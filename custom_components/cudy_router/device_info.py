@@ -137,8 +137,11 @@ def build_router_device_info(coordinator: Any) -> DeviceInfo:
 
 def _router_device_id(device_registry: Any, entry_id: str) -> str | None:
     """Return the registry id of the router device, if it exists yet."""
-    router_device = device_registry.async_get_device(identifiers={(DOMAIN, entry_id)})
-    return router_device.id if router_device is not None else None
+    # Look up within this config entry only: identifiers are no longer unique across entries
+    for device in async_entries_for_config_entry(device_registry, entry_id):
+        if (DOMAIN, entry_id) in device.identifiers:
+            return device.id
+    return None
 
 
 def async_link_child_devices(hass: HomeAssistant, config_entry: Any) -> None:
