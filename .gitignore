@@ -1,0 +1,18 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# OS metadata (macOS Finder / AppleDouble)
+.DS_Store
+._*
+
+# Editors
+.idea/
+.vscode/
