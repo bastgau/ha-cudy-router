@@ -357,6 +357,14 @@ def parse_network_signal_indicator(value: str | None) -> tuple[str | None, int |
     return f"{match.group('network')}G", int(match.group("strength"))
 
 
+def _network_generation_from_text(value: str | None) -> str | None:
+    """Read the generation from a label such as ``EE 5G-NSA`` or ``Movistar 4G``."""
+    if not value:
+        return None
+    match = re.search(r"(?<![0-9A-Za-z])([2-5])G(?![0-9A-Za-z])", value, re.IGNORECASE)
+    return f"{match.group(1)}G" if match else None
+
+
 def _parse_modem_network_icon(input_html: str) -> tuple[str | None, int | None]:
     """Read cellular network type and bar strength from Cudy icon classes."""
     soup = BeautifulSoup(input_html, "html.parser")
@@ -508,17 +516,21 @@ def parse_modem_info(input_html: str) -> dict[str, Any]:
 
     raw_data = parse_tables(input_html)
     cellid = hex_as_int(raw_data.get("Cell ID") or raw_data.get("CellID"))
-    raw_network = (
-        (raw_data.get("Network Type") or "").replace(" ...", "")
-        or _parse_modem_network_text(input_html)
-        or ""
+    raw_network = " ".join(
+        (
+            (raw_data.get("Network Type") or "").replace(" ...", "")
+            or _parse_modem_network_text(input_html)
+            or ""
+        ).split()
     )
     raw_signal = raw_data.get("Signal Strength") or raw_data.get("Signal")
     icon_network, icon_signal = _parse_modem_network_icon(input_html)
     text_network, text_signal = parse_network_signal_indicator(
         raw_network or raw_signal
     )
-    indicator_network = icon_network or text_network
+    # The icon class only encodes the LTE anchor on 5G-NSA connections (``icon-4g3``
+    # next to a "5G-NSA" label), so a generation named in the text wins over the icon.
+    indicator_network = _network_generation_from_text(raw_network) or icon_network or text_network
     indicator_signal = icon_signal if icon_signal is not None else text_signal
     rssi = as_int(raw_data.get("RSSI"))
     signal_strength = (
