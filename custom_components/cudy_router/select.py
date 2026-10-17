@@ -21,6 +21,7 @@ from .const import (
     MODULE_CELLULAR_SETTINGS,
     MODULE_VPN_SETTINGS,
     MODULE_WIRELESS_SETTINGS,
+    MODULE_WISP,
 )
 from .coordinator import CudyRouterDataUpdateCoordinator
 from .device_info import build_router_device_info
@@ -194,6 +195,10 @@ async def async_setup_entry(
         if entity_id:
             entity_registry.async_remove(entity_id)
 
+    # WISP network picker (scan results)
+    if module_available(device_model, MODULE_WISP, coordinator.data):
+        entities.append(CudyWispNetworkSelect(coordinator))
+
     async_add_entities(entities)
 
 
@@ -291,3 +296,93 @@ class CudyRouterSettingSelect(
                 self.entity_description.key,
                 result[1],
             )
+
+
+def _unique_ssid_options(coordinator: CudyRouterDataUpdateCoordinator) -> list[str]:
+    """Unique SSIDs from the last scan, strongest signal first."""
+    networks = getattr(coordinator, "wisp_networks", [])
+    seen: list[str] = []
+    for network in networks:
+        if network["ssid"] not in seen:
+            seen.append(network["ssid"])
+    return seen or [NO_NETWORKS_LABEL]
+
+
+NO_NETWORKS_LABEL = "Scan first"
+
+
+class CudyWispNetworkSelect(
+    CoordinatorEntity[CudyRouterDataUpdateCoordinator], SelectEntity
+):
+    """Picker for a Wi-Fi network found by the WISP scan.
+
+    The options come from `coordinator.wisp_networks`, filled by the
+    `button.*_wisp_scan` button (see button.py). The choice is kept in
+    `coordinator.wisp_selected_ssid` and read by `button.*_wisp_connect`.
+    """
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:wifi-star"
+    _attr_name = "WISP network"
+
+    def __init__(self, coordinator: CudyRouterDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}-wisp-network"
+        self._attr_device_info = build_router_device_info(coordinator)
+
+    @property
+    def options(self) -> list[str]:
+        return _unique_ssid_options(self.coordinator)
+
+    @property
+    def current_option(self) -> str | None:
+        options = self.options
+        selected = getattr(self.coordinator, "wisp_selected_ssid", None)
+        if selected in options:
+            return selected
+        return options[0] if options else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        networks = getattr(self.coordinator, "wisp_networks", [])
+
+        # Full scan list for dashboard tables (e.g. a Markdown card), one row per
+        # SSID; networks is sorted strongest first, so the first hit per SSID wins.
+        network_list: list[dict[str, Any]] = []
+        seen_ssids: set[str] = set()
+        for n in networks:
+            if n["ssid"] in seen_ssids:
+                continue
+            seen_ssids.add(n["ssid"])
+            network_list.append(
+                {
+                    "ssid": n["ssid"],
+                    "bssid": n["bssid"],
+                    "channel": n["channel"],
+                    "signal_dbm": n["signal_dbm"],
+                    "encrypted": n["encrypted"],
+                }
+            )
+
+        attrs: dict[str, Any] = {
+            "networks_found": len(network_list),
+            "networks": network_list,
+        }
+
+        match = next((n for n in networks if n["ssid"] == self.current_option), None)
+        if match:
+            attrs.update(
+                {
+                    "bssid": match["bssid"],
+                    "signal_dbm": match["signal_dbm"],
+                    "channel": match["channel"],
+                    "encrypted": match["encrypted"],
+                }
+            )
+        return attrs
+
+    async def async_select_option(self, option: str) -> None:
+        if option == NO_NETWORKS_LABEL:
+            return
+        self.coordinator.wisp_selected_ssid = option
+        self.async_write_ha_state()

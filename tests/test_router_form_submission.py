@@ -199,6 +199,61 @@ def test_set_device_access_supports_vpn_toggle(monkeypatch) -> None:
     ]
 
 
+def test_set_device_access_runs_the_apply_step_the_router_asks_for(monkeypatch) -> None:
+    """A device toggle only takes effect once the router's Apply step runs (issue #28)."""
+    router = router_module.CudyRouter(None, "https://192.168.10.1", "user", "password")
+
+    page_html = """
+    <form class="form-horizontal" role="form" method="post">
+      <input type="hidden" name="token" value="page-token" />
+      <table class="table table-striped"><tbody>
+        <tr id="cbi-table-1">
+          <td>NICK</td><td>192.168.10.20</td><td>74:86:E2:10:22:61</td>
+          <td>
+            <input type="hidden" name="cbi.cbe.table.1.vpn" value="1" />
+            <input type="hidden" id="cbid.table.1.vpn" name="cbid.table.1.vpn" value="1" />
+            <i class="fa fa-toggle-on" onclick="cbi_switch_toggle(this, true, '/cgi-bin/luci/admin/network/devices/vpn?macaddr=74:86:E2:10:22:61&hostname=NICK&internet=1&vpn=1')"></i>
+          </td>
+        </tr>
+      </tbody></table>
+    </form>
+    """
+    toggled_html = page_html.replace('name="cbid.table.1.vpn" value="1"', 'name="cbid.table.1.vpn" value="0"')
+    apply_script = (
+        "<script>$.post('/cgi-bin/luci/admin/servicectl/restart/network', {token: 'apply-token'});"
+        "$.get('/cgi-bin/luci/admin/servicectl/status?service=network');</script>"
+    )
+    posted: list[str] = []
+    polled: list[str] = []
+
+    monkeypatch.setattr(
+        router,
+        "get",
+        lambda path, silent=False: page_html if path == "admin/network/devices/devlist?detail=1" else "",
+    )
+
+    def fake_post(path: str, **kwargs):
+        posted.append(path)
+        if "servicectl/restart" in path:
+            assert kwargs["data"] == "token=apply-token"
+            return _response("")
+        return _response(toggled_html + apply_script)
+
+    def fake_get(path: str, **kwargs):
+        polled.append(path)
+        return _response("finish")
+
+    monkeypatch.setattr(router, "_luci_post", fake_post)
+    monkeypatch.setattr(router, "_luci_get", fake_get)
+
+    status, message = router.set_device_access({"mac": "74:86:E2:10:22:61"}, "vpn", False)
+
+    assert status == 200
+    assert message == "Configuration applied."
+    assert any("servicectl/restart/network" in path for path in posted)
+    assert any("servicectl/status" in path for path in polled)
+
+
 def test_set_device_access_accepts_prefixed_luci_toggle_urls(monkeypatch) -> None:
     """Toggle URLs may include a path prefix before /cgi-bin/luci/."""
     router = router_module.CudyRouter(None, "https://192.168.10.1", "user", "password")

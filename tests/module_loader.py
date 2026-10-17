@@ -147,41 +147,22 @@ def _ensure_homeassistant_stub() -> None:
         button_module.ButtonEntity = ButtonEntity
         sys.modules["homeassistant.components.button"] = button_module
 
-    device_tracker_module = sys.modules.get("homeassistant.components.device_tracker")
-    if device_tracker_module is None:
-        device_tracker_module = types.ModuleType("homeassistant.components.device_tracker")
+    text_module = sys.modules.get("homeassistant.components.text")
+    if text_module is None:
+        text_module = types.ModuleType("homeassistant.components.text")
 
-        class SourceType:
-            ROUTER = "router"
-            GPS = "gps"
-            BLUETOOTH = "bluetooth"
-            BLUETOOTH_LE = "bluetooth_le"
-
-        device_tracker_module.SourceType = SourceType
-        sys.modules["homeassistant.components.device_tracker"] = device_tracker_module
-
-    device_tracker_config_entry_module = sys.modules.get(
-        "homeassistant.components.device_tracker.config_entry"
-    )
-    if device_tracker_config_entry_module is None:
-        device_tracker_config_entry_module = types.ModuleType(
-            "homeassistant.components.device_tracker.config_entry"
-        )
-
-        class ScannerEntity:
+        class TextEntity:
             @property
             def unique_id(self):
                 return getattr(self, "_attr_unique_id", None)
 
-            @property
-            def extra_state_attributes(self):
-                return {}
+        class TextMode:
+            PASSWORD = "password"
+            TEXT = "text"
 
-        device_tracker_config_entry_module.ScannerEntity = ScannerEntity
-        sys.modules[
-            "homeassistant.components.device_tracker.config_entry"
-        ] = device_tracker_config_entry_module
-        device_tracker_module.config_entry = device_tracker_config_entry_module
+        text_module.TextEntity = TextEntity
+        text_module.TextMode = TextMode
+        sys.modules["homeassistant.components.text"] = text_module
 
     config_entries_module = sys.modules.get("homeassistant.config_entries")
     if config_entries_module is None:
