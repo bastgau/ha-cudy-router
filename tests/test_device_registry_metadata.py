@@ -17,6 +17,14 @@ def _coordinator(data: dict, *, entry_id: str = "entry-1", model: str = "P5") ->
     )
 
 
+
+class _FakeDeviceRegistry(SimpleNamespace):
+    """Device registry fake exposing the non-deprecated lookup helpers."""
+
+    def async_get(self, device_id: str):
+        return self.devices.get(device_id)
+
+
 def test_router_device_info_includes_name_model_firmware_and_mac_connection() -> None:
     """The main router device should expose rich metadata while keeping its existing identifier."""
     coordinator = _coordinator(
@@ -48,7 +56,7 @@ def test_client_device_info_uses_client_name_and_parent_router_without_cudy_manu
 
     assert info["identifiers"] == {("cudy_router", "entry-1-device-aabbccddee42")}
     assert info["name"] == "Living Room TV"
-    assert info["via_device"] == ("cudy_router", "entry-1")
+    assert "via_device" not in info
     assert info["connections"] == {("mac", "aa:bb:cc:dd:ee:42")}
     assert "manufacturer" not in info
 
@@ -75,7 +83,7 @@ def test_mesh_device_info_prefixes_mesh_name_and_splits_hardware_version() -> No
     assert info["model"] == "RE1200"
     assert info["hw_version"] == "V1.0"
     assert info["sw_version"] == "2.4.20"
-    assert info["via_device"] == ("cudy_router", "entry-1")
+    assert "via_device" not in info
     assert info["connections"] == {("mac", "aa:bb:cc:dd:ee:11")}
 
 
@@ -124,21 +132,21 @@ def test_stale_mesh_cleanup_removes_only_missing_mesh_entities() -> None:
 
 def test_stale_client_cleanup_removes_only_missing_client_entities() -> None:
     """Client cleanup should prune devices that are no longer allowed."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_old": SimpleNamespace(
                 id="client_old",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee10")},
             ),
             "client_current": SimpleNamespace(
                 id="client_current",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee11")},
             ),
             "router": SimpleNamespace(
                 id="router",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1")},
             ),
         },
@@ -196,11 +204,11 @@ def test_stale_client_cleanup_removes_only_missing_client_entities() -> None:
 
 def test_stale_client_cleanup_keeps_shared_client_device_when_tracker_entity_remains() -> None:
     """Sensor cleanup should not drop the device registry entry while a tracker still exists."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_shared": SimpleNamespace(
                 id="client_shared",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee11")},
             ),
         },
@@ -294,11 +302,11 @@ def test_cleanup_stale_client_switch_entities_prunes_missing_feature_switches() 
 
 def test_stale_client_cleanup_falls_back_to_entity_id_when_domain_is_missing() -> None:
     """Client cleanup should still prune stale entries when the registry omits the domain field."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_old": SimpleNamespace(
                 id="client_old",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee10")},
             ),
         },
@@ -344,11 +352,11 @@ def test_stale_client_cleanup_falls_back_to_entity_id_when_domain_is_missing() -
 
 def test_stale_client_cleanup_removes_device_after_sensor_and_switch_pruning() -> None:
     """A client device should be removed once both live client platforms have been pruned."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_old": SimpleNamespace(
                 id="client_old",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee10")},
             ),
         },
@@ -409,11 +417,11 @@ def test_stale_client_cleanup_removes_device_after_sensor_and_switch_pruning() -
 
 def test_known_client_devices_collect_names_and_switch_features() -> None:
     """Known clients should expose names and previously seen per-client switch features."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_1": SimpleNamespace(
                 id="client_1",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee42")},
                 name="Living Room TV",
                 name_by_user=None,
@@ -462,7 +470,7 @@ def test_known_client_devices_collect_names_and_switch_features() -> None:
 
 def test_known_client_devices_ignore_non_client_domains_with_mac_like_unique_ids() -> None:
     """Only client sensor, switch, and tracker entities should contribute known clients."""
-    device_registry = SimpleNamespace(devices={})
+    device_registry = _FakeDeviceRegistry(devices={})
     registry = SimpleNamespace(
         entities={
             "select.not_a_client": SimpleNamespace(
@@ -490,7 +498,7 @@ def test_known_client_devices_ignore_non_client_domains_with_mac_like_unique_ids
 
 def test_known_tracker_clients_reads_tracker_entities_from_registries() -> None:
     """Known tracker choices should come from tracker entities and their device metadata."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_tracker": SimpleNamespace(
                 id="client_tracker",
@@ -531,7 +539,7 @@ def test_known_tracker_clients_reads_tracker_entities_from_registries() -> None:
 
 def test_known_tracker_clients_reads_legacy_mac_unique_ids() -> None:
     """Legacy raw-MAC tracker IDs should remain selectable after upgrade."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "legacy_tracker": SimpleNamespace(
                 id="legacy_tracker",
@@ -578,7 +586,14 @@ def test_async_ensure_client_entity_device_links_legacy_tracker_entries() -> Non
     device_registry = SimpleNamespace(
         async_get_or_create=lambda **kwargs: (
             create_calls.append(kwargs) or SimpleNamespace(id="client_tracker")
-        )
+        ),
+        devices={
+            "router_dev": SimpleNamespace(
+                id="router_dev",
+                config_entry_id="entry-1",
+                identifiers={("cudy_router", "entry-1")},
+            )
+        },
     )
     registry = SimpleNamespace(
         entities={
@@ -622,7 +637,7 @@ def test_async_ensure_client_entity_device_links_legacy_tracker_entries() -> Non
             "identifiers": {("cudy_router", "entry-1-device-aabbccddee42")},
             "connections": {("mac", "aa:bb:cc:dd:ee:42")},
             "name": "Living Room TV",
-            "via_device": ("cudy_router", "entry-1"),
+            "via_device_id": "router_dev",
         }
     ]
     assert update_calls == [
@@ -632,11 +647,11 @@ def test_async_ensure_client_entity_device_links_legacy_tracker_entries() -> Non
 
 def test_known_tracker_clients_ignore_plain_client_devices_without_tracker_entities() -> None:
     """Tracker lookups should not be expanded by non-tracker client registry entries."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_only": SimpleNamespace(
                 id="client_only",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee55")},
                 name="Kitchen TV",
                 name_by_user=None,
@@ -658,16 +673,16 @@ def test_known_tracker_clients_ignore_plain_client_devices_without_tracker_entit
 
 def test_stale_tracker_cleanup_removes_only_disallowed_tracker_entities() -> None:
     """Tracker cleanup should keep selected trackers and shared client devices."""
-    device_registry = SimpleNamespace(
+    device_registry = _FakeDeviceRegistry(
         devices={
             "client_old": SimpleNamespace(
                 id="client_old",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee10")},
             ),
             "client_selected": SimpleNamespace(
                 id="client_selected",
-                config_entries={"entry-1"},
+                config_entry_id="entry-1",
                 identifiers={("cudy_router", "entry-1-device-aabbccddee11")},
             ),
         },
@@ -810,3 +825,34 @@ def test_stale_tracker_cleanup_prunes_noncanonical_duplicates_for_allowed_macs()
     )
 
     assert registry.removed == ["device_tracker.client_duplicate"]
+
+
+def test_async_link_child_devices_sets_via_device_id_on_clients_and_mesh() -> None:
+    """Client and mesh devices should be attached to the router via via_device_id."""
+    def _device(device_id: str, identifier: str, via: str | None = None):
+        return SimpleNamespace(
+            id=device_id,
+            config_entry_id="entry-1",
+            identifiers={("cudy_router", identifier)},
+            via_device_id=via,
+        )
+
+    device_registry = _FakeDeviceRegistry(devices={})
+    device_registry.async_update_device = lambda device_id, **changes: [
+        setattr(device_registry.devices[device_id], k, v) for k, v in changes.items()
+    ]
+    device_info.async_get_device_registry = lambda hass: device_registry
+    device_registry.devices.update(
+        {
+            "router": _device("router", "entry-1"),
+            "client": _device("client", "entry-1-device-aabbccddee42"),
+            "mesh": _device("mesh", "entry-1-mesh-aa:bb:cc:dd:ee:11"),
+            "linked": _device("linked", "entry-1-device-aabbccddee43", "router"),
+        }
+    )
+
+    device_info.async_link_child_devices(object(), SimpleNamespace(entry_id="entry-1"))
+
+    assert device_registry.devices["client"].via_device_id == "router"
+    assert device_registry.devices["mesh"].via_device_id == "router"
+    assert device_registry.devices["router"].via_device_id is None

@@ -266,7 +266,30 @@ def _ensure_homeassistant_stub() -> None:
             def async_remove_device(self, device_id: str) -> None:
                 self.devices.pop(device_id, None)
 
+            def async_get(self, device_id: str):
+                return self.devices.get(device_id)
+
+            def async_get_device(self, identifiers=None, connections=None):
+                for device in self.devices.values():
+                    if identifiers and identifiers & getattr(device, "identifiers", set()):
+                        return device
+                return None
+
+            def async_update_device(self, device_id: str, **changes):
+                device = self.devices[device_id]
+                for key, value in changes.items():
+                    setattr(device, key, value)
+                return device
+
+        def _entries_for_config_entry(registry, config_entry_id):
+            return [
+                device
+                for device in registry.devices.values()
+                if getattr(device, "config_entry_id", None) == config_entry_id
+            ]
+
         device_registry_module.CONNECTION_NETWORK_MAC = "mac"
+        device_registry_module.async_entries_for_config_entry = _entries_for_config_entry
         device_registry_module.DeviceInfo = DeviceInfo
         device_registry_module._registry = _DeviceRegistry()
         device_registry_module.async_get = lambda hass: device_registry_module._registry
