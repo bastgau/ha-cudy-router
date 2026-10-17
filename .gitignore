@@ -1,13 +1,35 @@
 # Python bytecode and caches
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
 # Virtual environments
 .venv/
+.venv-*/
 venv/
+env/
+
+# Secrets and local config
+.env
+.env.*
+.ssh-command
+config/*
+
+# Home Assistant runtime / local files
+.storage/
+home-assistant_v2.db
+.HA_VERSION
+.cloud/
+
+# Build artifacts
+build/
+dist/
+
+# Tooling scratch
+.playwright-mcp/
 
 # OS metadata (macOS Finder / AppleDouble)
 .DS_Store
