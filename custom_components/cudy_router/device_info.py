@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import (
     CONNECTION_NETWORK_MAC,
     DeviceInfo,
+    async_entries_for_config_entry,
     async_get as async_get_device_registry,
 )
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
@@ -134,13 +135,46 @@ def build_router_device_info(coordinator: Any) -> DeviceInfo:
     return DeviceInfo(**info)
 
 
+def _router_device_id(device_registry: Any, entry_id: str) -> str | None:
+    """Return the registry id of the router device, if it exists yet."""
+    # Look up within this config entry only: identifiers are no longer unique across entries
+    for device in async_entries_for_config_entry(device_registry, entry_id):
+        if (DOMAIN, entry_id) in device.identifiers:
+            return device.id
+    return None
+
+
+def async_link_child_devices(hass: HomeAssistant, config_entry: Any) -> None:
+    """Attach client and mesh devices to the router device via via_device_id.
+
+    DeviceInfo.via_device is deprecated, so the parent link is set here on the
+    registry entries instead. Safe to call repeatedly; only changed links are written.
+    """
+    device_registry = async_get_device_registry(hass)
+    router_id = _router_device_id(device_registry, config_entry.entry_id)
+    if router_id is None:
+        return
+
+    child_markers = (
+        f"{config_entry.entry_id}-device-",
+        f"{config_entry.entry_id}-mesh-",
+    )
+    for device in async_entries_for_config_entry(device_registry, config_entry.entry_id):
+        if device.id == router_id or device.via_device_id == router_id:
+            continue
+        if any(
+            domain == DOMAIN and identifier.startswith(child_markers)
+            for domain, identifier in device.identifiers
+        ):
+            device_registry.async_update_device(device.id, via_device_id=router_id)
+
+
 def build_client_device_info(config_entry: Any, device: dict[str, Any]) -> DeviceInfo:
     """Return registry metadata for a connected client device."""
     normalized_mac = normalize_mac(device.get("mac"))
     info: dict[str, Any] = {
         "identifiers": {(DOMAIN, f"{config_entry.entry_id}-device-{normalized_mac}")},
         "name": client_display_name(device),
-        "via_device": (DOMAIN, config_entry.entry_id),
     }
 
     connections = _mac_connection(device.get("mac"))
@@ -165,7 +199,7 @@ def async_ensure_client_entity_device(
         identifiers=device_info["identifiers"],
         connections=device_info.get("connections"),
         name=device_info.get("name"),
-        via_device=device_info.get("via_device"),
+        via_device_id=_router_device_id(device_registry, config_entry.entry_id),
     )
 
     entity_registry = async_get_entity_registry(hass)
@@ -193,7 +227,6 @@ def build_mesh_device_info(coordinator: Any, mesh_mac: str, mesh_device: dict[st
         "identifiers": {(DOMAIN, f"{coordinator.config_entry.entry_id}-mesh-{mesh_mac}")},
         "manufacturer": "Cudy",
         "name": mesh_display_name(mesh_device.get("name"), mesh_mac),
-        "via_device": (DOMAIN, coordinator.config_entry.entry_id),
     }
 
     connections = _mac_connection(mesh_device.get("mac_address") or mesh_mac)
@@ -346,10 +379,7 @@ def async_cleanup_stale_tracker_entities(
         is not None
     }
 
-    for device in list(device_registry.devices.values()):
-        if config_entry.entry_id not in getattr(device, "config_entries", set()):
-            continue
-
+    for device in async_entries_for_config_entry(device_registry, config_entry.entry_id):
         matching_identifier = next(
             (
                 identifier
@@ -396,7 +426,7 @@ def known_client_devices(
             continue
 
         device = (
-            device_registry.devices.get(entry.device_id)
+            device_registry.async_get(entry.device_id)
             if getattr(entry, "device_id", None)
             else None
         )
@@ -420,10 +450,7 @@ def known_client_devices(
         if entry_domain == "switch" and feature_key is not None:
             client["switch_features"].add(feature_key)
 
-    for device in list(device_registry.devices.values()):
-        if config_entry.entry_id not in getattr(device, "config_entries", set()):
-            continue
-
+    for device in async_entries_for_config_entry(device_registry, config_entry.entry_id):
         matching_identifier = next(
             (
                 identifier
@@ -556,10 +583,7 @@ def _async_cleanup_stale_client_entities(
         is not None
     }
 
-    for device in list(device_registry.devices.values()):
-        if config_entry.entry_id not in getattr(device, "config_entries", set()):
-            continue
-
+    for device in async_entries_for_config_entry(device_registry, config_entry.entry_id):
         matching_identifier = next(
             (
                 identifier

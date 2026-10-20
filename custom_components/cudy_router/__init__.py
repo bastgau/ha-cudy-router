@@ -14,7 +14,7 @@ from homeassistant.const import (
     CONF_USERNAME,
     Platform,
 )
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 try:
     from homeassistant.core import SupportsResponse
 except ImportError:  # pragma: no cover - older Home Assistant versions
@@ -37,6 +37,7 @@ from .const import (
 )
 from .coordinator import CudyRouterDataUpdateCoordinator
 from .device_info import (
+    async_link_child_devices,
     async_cleanup_stale_client_entities,
     async_cleanup_stale_tracker_entities,
     known_client_devices,
@@ -206,6 +207,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: CudyRouterConfigEntry) -
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Child devices (clients, mesh nodes) are linked to the router after each refresh
+    @callback
+    def _link_child_devices() -> None:
+        async_link_child_devices(hass, entry)
+
+    _link_child_devices()
+    entry.async_on_unload(coordinator.async_add_listener(_link_child_devices))
 
     # Register services
     await _async_setup_services(hass)
