@@ -129,6 +129,13 @@ class CudyRouterDeviceTracker(
     """Track the presence of a configured router client."""
 
     _attr_has_entity_name = True
+    # These attributes change on every poll (up to ~3100 times/7d) while the
+    # tracked home/away state itself rarely changes, so keep them out of the
+    # recorder's history to avoid disproportionate database growth. They stay
+    # live on the entity via extra_state_attributes.
+    _unrecorded_attributes = frozenset(
+        {"up_speed", "down_speed", "signal", "online_time"}
+    )
 
     def __init__(
         self,
